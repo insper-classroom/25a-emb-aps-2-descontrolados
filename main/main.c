@@ -12,126 +12,124 @@
 #include "pico/stdlib.h"
 #include <stdio.h>
 
-const uint BTN_1_OLED = 28;
-const uint BTN_2_OLED = 26;
-const uint BTN_3_OLED = 27;
+// #include "tusb.h"
 
-const uint LED_1_OLED = 20;
-const uint LED_2_OLED = 21;
-const uint LED_3_OLED = 22;
+const int BTN_LARANJA = 22;
+const int BTN_AZUL = 21;
+const int BTN_AMARELO = 20;
+const int BTN_VERMELHO = 19;
+const int BTN_VERDE = 18;
 
-void oled1_btn_led_init(void) {
-    gpio_init(LED_1_OLED);
-    gpio_set_dir(LED_1_OLED, GPIO_OUT);
+// Flags para cada botão
+volatile bool btn_laranja_flag = false;
+volatile bool btn_azul_flag = false;
+volatile bool btn_amarelo_flag = false;
+volatile bool btn_vermelho_flag = false;
+volatile bool btn_verde_flag = false;
 
-    gpio_init(LED_2_OLED);
-    gpio_set_dir(LED_2_OLED, GPIO_OUT);
-
-    gpio_init(LED_3_OLED);
-    gpio_set_dir(LED_3_OLED, GPIO_OUT);
-
-    gpio_init(BTN_1_OLED);
-    gpio_set_dir(BTN_1_OLED, GPIO_IN);
-    gpio_pull_up(BTN_1_OLED);
-
-    gpio_init(BTN_2_OLED);
-    gpio_set_dir(BTN_2_OLED, GPIO_IN);
-    gpio_pull_up(BTN_2_OLED);
-
-    gpio_init(BTN_3_OLED);
-    gpio_set_dir(BTN_3_OLED, GPIO_IN);
-    gpio_pull_up(BTN_3_OLED);
-}
-
-void oled1_demo_1(void *p) {
-    printf("Inicializando Driver\n");
-    ssd1306_init();
-
-    printf("Inicializando GLX\n");
-    ssd1306_t disp;
-    gfx_init(&disp, 128, 32);
-
-    printf("Inicializando btn and LEDs\n");
-    oled1_btn_led_init();
-
-    char cnt = 15;
-    while (1) {
-
-        if (gpio_get(BTN_1_OLED) == 0) {
-            cnt = 15;
-            gpio_put(LED_1_OLED, 0);
-            gfx_clear_buffer(&disp);
-            gfx_draw_string(&disp, 0, 0, 1, "LED 1 - ON");
-            gfx_show(&disp);
-        } else if (gpio_get(BTN_2_OLED) == 0) {
-            cnt = 15;
-            gpio_put(LED_2_OLED, 0);
-            gfx_clear_buffer(&disp);
-            gfx_draw_string(&disp, 0, 0, 1, "LED 2 - ON");
-            gfx_show(&disp);
-        } else if (gpio_get(BTN_3_OLED) == 0) {
-            cnt = 15;
-            gpio_put(LED_3_OLED, 0);
-            gfx_clear_buffer(&disp);
-            gfx_draw_string(&disp, 0, 0, 1, "LED 3 - ON");
-            gfx_show(&disp);
-        } else {
-
-            gpio_put(LED_1_OLED, 1);
-            gpio_put(LED_2_OLED, 1);
-            gpio_put(LED_3_OLED, 1);
-            gfx_clear_buffer(&disp);
-            gfx_draw_string(&disp, 0, 0, 1, "PRESSIONE ALGUM");
-            gfx_draw_string(&disp, 0, 10, 1, "BOTAO");
-            gfx_draw_line(&disp, 15, 27, cnt,
-                          27);
-            vTaskDelay(pdMS_TO_TICKS(50));
-            if (++cnt == 112)
-                cnt = 15;
-
-            gfx_show(&disp);
+void btn_note_callback(uint gpio, uint32_t events)
+{
+    if (events & GPIO_IRQ_EDGE_FALL)
+    {
+        if (gpio == BTN_LARANJA)
+        {
+            btn_laranja_flag = true;
+        }
+        else if (gpio == BTN_AZUL)
+        {
+            btn_azul_flag = true;
+        }
+        else if (gpio == BTN_AMARELO)
+        {
+            btn_amarelo_flag = true;
+        }
+        else if (gpio == BTN_VERMELHO)
+        {
+            btn_vermelho_flag = true;
+        }
+        else if (gpio == BTN_VERDE)
+        {
+            btn_verde_flag = true;
+        }
+    }
+    else if (events & GPIO_IRQ_EDGE_RISE)
+    {
+        if (gpio == BTN_LARANJA)
+        {
+            btn_laranja_flag = false;
+        }
+        else if (gpio == BTN_AZUL)
+        {
+            btn_azul_flag = false;
+        }
+        else if (gpio == BTN_AMARELO)
+        {
+            btn_amarelo_flag = false;
+        }
+        else if (gpio == BTN_VERMELHO)
+        {
+            btn_vermelho_flag = false;
+        }
+        else if (gpio == BTN_VERDE)
+        {
+            btn_verde_flag = false;
         }
     }
 }
 
-void oled1_demo_2(void *p) {
-    printf("Inicializando Driver\n");
-    ssd1306_init();
+// inicializa todos os botoes
+void init_buttons()
+{
+    gpio_init(BTN_LARANJA);
+    gpio_set_dir(BTN_LARANJA, GPIO_IN);
+    gpio_pull_up(BTN_LARANJA);
+    gpio_init(BTN_AZUL);
+    gpio_set_dir(BTN_AZUL, GPIO_IN);
+    gpio_pull_up(BTN_AZUL);
+    gpio_init(BTN_AMARELO);
+    gpio_set_dir(BTN_AMARELO, GPIO_IN);
+    gpio_pull_up(BTN_AMARELO);
+    gpio_init(BTN_VERMELHO);
+    gpio_set_dir(BTN_VERMELHO, GPIO_IN);
+    gpio_pull_up(BTN_VERMELHO);
+    gpio_init(BTN_VERDE);
+    gpio_set_dir(BTN_VERDE, GPIO_IN);
+    gpio_pull_up(BTN_VERDE);
+}
 
-    printf("Inicializando GLX\n");
-    ssd1306_t disp;
-    gfx_init(&disp, 128, 32);
+void init_callbacks()
+{
+    gpio_set_irq_enabled_with_callback(BTN_LARANJA, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+    gpio_set_irq_enabled_with_callback(BTN_AZUL, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+    gpio_set_irq_enabled_with_callback(BTN_AMARELO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+    gpio_set_irq_enabled_with_callback(BTN_VERMELHO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+    gpio_set_irq_enabled_with_callback(BTN_VERDE, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+}
 
-    printf("Inicializando btn and LEDs\n");
-    oled1_btn_led_init();
+void task_debug(void *p) {
+    while (true) {
+        printf("Verde:%d Vermelho:%d Amarelo:%d Azul:%d Laranja:%d\n",
+            btn_verde_flag, btn_vermelho_flag, btn_amarelo_flag,
+            btn_azul_flag, btn_laranja_flag);
 
-    char cnt = 15;
-    while (1) {
-
-        gfx_clear_buffer(&disp);
-        gfx_draw_string(&disp, 0, 0, 1, "Mandioca");
-        gfx_show(&disp);
-        vTaskDelay(pdMS_TO_TICKS(150));
-
-        gfx_clear_buffer(&disp);
-        gfx_draw_string(&disp, 0, 0, 2, "Batata");
-        gfx_show(&disp);
-        vTaskDelay(pdMS_TO_TICKS(150));
-
-        gfx_clear_buffer(&disp);
-        gfx_draw_string(&disp, 0, 0, 4, "Inhame");
-        gfx_show(&disp);
-        vTaskDelay(pdMS_TO_TICKS(150));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
-int main() {
+
+int main()
+{
     stdio_init_all();
+    printf("Iniciando controle Clone Hero...\n");
 
-    xTaskCreate(oled1_demo_2, "Demo 2", 4095, NULL, 1, NULL);
+    // Inicializa os botões e interrupções
+    init_buttons();
+    init_callbacks();
 
+    xTaskCreate(task_debug, "debug", 256, NULL, 1, NULL);
     vTaskStartScheduler();
 
+
     while (true)
-        ;
+        ; // nunca chega aqui
 }
