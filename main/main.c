@@ -106,13 +106,28 @@ void init_callbacks()
     gpio_set_irq_enabled_with_callback(BTN_VERDE, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
 }
 
-void task_debug(void *p) {
-    while (true) {
-        printf("Verde:%d Vermelho:%d Amarelo:%d Azul:%d Laranja:%d\n",
-            btn_verde_flag, btn_vermelho_flag, btn_amarelo_flag,
-            btn_azul_flag, btn_laranja_flag);
+void task_serial(void *p) {
+    bool last_state[5] = {0};
 
-        vTaskDelay(pdMS_TO_TICKS(50));
+    while (true) {
+        bool current_state[5] = {
+            btn_verde_flag,
+            btn_vermelho_flag,
+            btn_amarelo_flag,
+            btn_azul_flag,
+            btn_laranja_flag
+        };
+
+        const char* letras[5] = {"A", "S", "J", "K", "L"};
+
+        for (int i = 0; i < 5; i++) {
+            if (current_state[i] != last_state[i]) {
+                printf("%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
+                last_state[i] = current_state[i];
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -126,7 +141,7 @@ int main()
     init_buttons();
     init_callbacks();
 
-    xTaskCreate(task_debug, "debug", 256, NULL, 1, NULL);
+    xTaskCreate(task_serial, "serial", 512, NULL, 1, NULL);
     vTaskStartScheduler();
 
 
