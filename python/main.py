@@ -22,18 +22,26 @@ data_buffer = bytearray()
 
 # Move o mouse aplicando filtro exponencial e sensibilidade
 def move_mouse(axis, raw_value):
-    if axis not in (0, 1):
-        return
-    # filtro exponencial
-    s = smoothed[axis] + alpha * (raw_value - smoothed[axis])
-    smoothed[axis] = s
-    # aplica sensibilidade
-    delta = int(round(s * sensitivity))
-    if delta:
-        if axis == 0:
-            pyautogui.moveRel(delta, 0, duration=0)
-        else:
-            pyautogui.moveRel(0, delta, duration=0)
+    if axis == 2:
+            pyautogui.keyDown('space')
+            print("PRESSIONADO: SPACE")
+            time.sleep(0.1)
+            pyautogui.keyUp('space')
+            time.sleep(0.1)
+
+    else:
+        # filtro exponencial
+        s = smoothed[axis] + alpha * (raw_value - smoothed[axis])
+        smoothed[axis] = s
+        # aplica sensibilidade
+        delta = int(round(s * sensitivity))
+        if delta:
+            if axis == 0:
+                pyautogui.moveRel(delta, 0, duration=0)
+            if axis == 1:
+                pyautogui.moveRel(0, delta, duration=0)
+        
+
 
 # Interpreta 3 bytes de joystick
 def parse_data(packet):
@@ -69,18 +77,27 @@ def controle(ser):
             print(f"MOUSE: eixo={axis}, val={val}")
             del data_buffer[:4]
         # comandos ASCII para teclas 'q','w','a','s','d'
+
         try:
             txt_buf += chunk.decode('ascii')
-        except:
+        except UnicodeDecodeError:
             pass
+
         if '\n' in txt_buf:
             lines = txt_buf.split('\n')
             for line in lines[:-1]:
-                if line in ('q','w','a','s','d'): continue
+                # ignora simples 'q','w','a','s','d'
+                if line in ('q','w','a','s','d'):
+                    continue
+                # só processa linhas que contenham pelo menos um ':'
                 if ':' in line:
-                    key, action = line.strip().split(':')
+                    parts = line.strip().split(':', 1)
+                    if len(parts) != 2:
+                        # linha inválida, pula
+                        continue
+                    key, action = parts
                     key = key.lower()
-                    last_time[key] = now
+
                     if action == 'DOWN' and key not in keys_pressed:
                         pyautogui.keyDown(key)
                         keys_pressed.add(key)
@@ -88,9 +105,10 @@ def controle(ser):
                     elif action == 'UP' and key in keys_pressed:
                         pyautogui.keyUp(key)
                         keys_pressed.remove(key)
-                        del last_time[key]
                         print(f"SOLTOU: {key}")
+            # mantém apenas o resto incompleto no buffer
             txt_buf = lines[-1]
+
 
 # Retorna portas seriais disponíveis
 def serial_ports():

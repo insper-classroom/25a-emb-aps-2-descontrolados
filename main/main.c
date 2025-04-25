@@ -11,7 +11,13 @@
 #include "hardware/adc.h"
 #include "hardware/uart.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include "hardware/i2c.h"
+#include "mpu6050.h"
 
+#include "Fusion.h"
+
+#define SAMPLE_PERIOD (0.01f)
 // UART configuration
 #define UART_ID uart0
 #define BAUD_RATE 115200
@@ -33,6 +39,11 @@ volatile bool btn_azul_flag = false;
 volatile bool btn_amarelo_flag = false;
 volatile bool btn_vermelho_flag = false;
 volatile bool btn_verde_flag = false;
+
+// MPU6050 I2C address
+const int MPU_ADDRESS = 0x68;
+const int I2C_SDA_GPIO = 4;
+const int I2C_SCL_GPIO = 5;
 
 // ADC data structure
 typedef struct adc {
@@ -123,6 +134,49 @@ int convert_adc_value(uint16_t adc_val) {
     return scaled_value;
 }
 
+// MPU
+static void mpu6050_reset() {
+    // Two byte reset. First byte register, second byte data
+    // There are a load more options to set up the device in different ways that could be added here
+    uint8_t buf[] = {0x6B, 0x00};
+    i2c_write_blocking(i2c_default, MPU_ADDRESS, buf, 2, false);
+}
+
+static void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
+    // For this particular device, we send the device the register we want to read
+    // first, then subsequently read from the device. The register is auto incrementing
+    // so we don't need to keep sending the register we want, just the first.
+
+    uint8_t buffer[6];
+
+    // Start reading acceleration registers from register 0x3B for 6 bytes
+    uint8_t val = 0x3B;
+    i2c_write_blocking(i2c_default, MPU_ADDRESS, &val, 1, true); // true to keep master control of bus
+    i2c_read_blocking(i2c_default, MPU_ADDRESS, buffer, 6, false);
+
+    for (int i = 0; i < 3; i++) {
+        accel[i] = (buffer[i * 2] << 8 | buffer[(i * 2) + 1]);
+    }
+
+    // Now gyro data from reg 0x43 for 6 bytes
+    // The register is auto incrementing on each read
+    val = 0x43;
+    i2c_write_blocking(i2c_default, MPU_ADDRESS, &val, 1, true);
+    i2c_read_blocking(i2c_default, MPU_ADDRESS, buffer, 6, false);  // False - finished with bus
+
+    for (int i = 0; i < 3; i++) {
+        gyro[i] = (buffer[i * 2] << 8 | buffer[(i * 2) + 1]);;
+    }
+
+    // Now temperature from reg 0x41 for 2 bytes
+    // The register is auto incrementing on each read
+    val = 0x41;
+    i2c_write_blocking(i2c_default, MPU_ADDRESS, &val, 1, true);
+    i2c_read_blocking(i2c_default, MPU_ADDRESS, buffer, 2, false);  // False - finished with bus
+
+    *temp = buffer[0] << 8 | buffer[1];
+}
+
 // Task to monitor button status and send via serial printf
 void task_button_serial(void *p) {
     bool last_state[5] = {0};
@@ -209,28 +263,89 @@ void y_task(void *p) {
     }
 }
 
-// Task to send ADC data over UART
+void mpu6050_task(void *p) {
+    // configuracao do I2C
+    i2c_init(i2c_default, 400 * 1000);
+    gpio_set_function(I2C_SDA_GPIO, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL_GPIO, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA_GPIO);
+    gpio_pull_up(I2C_SCL_GPIO);
+
+    FusionAhrs ahrs;
+    FusionAhrsInitialise(&ahrs);
+
+     
+    int16_t acceleration[3], gyro[3], temp;
+  
+    while (true) { 
+  
+        mpu6050_read_raw(acceleration, gyro, &temp);
+        FusionVector gyroscope = {
+            .axis.x = gyro[0] / 131.0f, // Conversão para graus/s
+            .axis.y = gyro[1] / 131.0f,
+            .axis.z = gyro[2] / 131.0f,
+        };
+  
+        FusionVector accelerometer = {
+            .axis.x = acceleration[0] / 16384.0f, // Conversão para g
+            .axis.y = acceleration[1] / 16384.0f,
+            .axis.z = acceleration[2] / 16384.0f,
+        };      
+  
+        FusionAhrsUpdateNoMagnetometer(&ahrs, gyroscope, accelerometer, SAMPLE_PERIOD);
+        const FusionEuler euler = FusionQuaternionToEuler(FusionAhrsGetQuaternion(&ahrs));
+        // printf("Roll %0.1f, Pitch %0.1f, Yaw %0.1f\n", euler.angle.roll, euler.angle.pitch, euler.angle.yaw); 
+        
+        // criar os structs pra enviar pra fila
+  
+        adc_t acel;
+        acel.axis = 2;
+        acel.val = accelerometer.axis.y*100;
+        static int contador_zeros = 0;
+        printf("Acel: %d\n", acel.val);
+
+        if (acel.val == 0) {
+            contador_zeros++;
+            if (contador_zeros > 50) { 
+                printf("Sensor travado! Resetando MPU6050...\n");
+                mpu6050_reset(); 
+                contador_zeros = 0;
+            }
+        } else {
+            contador_zeros = 0;
+        }
+
+        
+        if (abs(acel.val) > 100) {
+            printf("SPACE\n");
+            xQueueSend(xQueueADC, &acel, 0);
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 void uart_task(void *p) {
     adc_t adc_data;
 
     while (1) {
-        if (xQueueReceive(xQueueADC, &adc_data, portMAX_DELAY)) {
-            int valor = adc_data.val;
-            uint8_t val_1 = (valor >> 8) & 0xFF;  // MSB
-            uint8_t val_0 = valor & 0xFF;         // LSB
-
-            uart_putc_raw(UART_ID, adc_data.axis);
-            uart_putc_raw(UART_ID, val_0);
-            uart_putc_raw(UART_ID, val_1);
-            uart_putc_raw(UART_ID, 255);  // End marker
+        if (xQueueReceive(xQueueADC, &adc_data, portMAX_DELAY))
+        {
+            uint8_t vec[4];
+            vec[0] = 0xFF; 
+            vec[1] = (uint8_t)adc_data.axis;
+            vec[2] = (uint8_t)(adc_data.val & 0xFF);
+            vec[3] = (uint8_t)((adc_data.val >> 8) & 0xFF);
+            uart_write_blocking(uart0, vec, 4); 
         }
     }
 }
 
+
 int main()
 {
     stdio_init_all();
-    printf("Iniciando controle Clone Hero com botoes e joystick...\n");
+    // printf("Iniciando controle Clone Hero com botoes e joystick...\n");
 
     // Initialize ADC for joystick
     adc_init();
@@ -250,7 +365,7 @@ int main()
     xQueueADC = xQueueCreate(64, sizeof(adc_t));
     
     if (xQueueADC == NULL) {
-        printf("Erro ao criar a fila ADC!\n");
+        //printf("Erro ao criar a fila ADC!\n");
         while(1); 
     }
     
@@ -258,7 +373,8 @@ int main()
     xTaskCreate(task_button_serial, "Button Serial", 512, NULL, 1, NULL);
     xTaskCreate(x_task, "X Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(y_task, "Y Axis Task", 256, NULL, 1, NULL);
-    xTaskCreate(uart_task, "UART Task", 256, NULL, 2, NULL);
+    xTaskCreate(mpu6050_task, "mpu6050_Task 1", 8192, NULL, 1, NULL);
+    xTaskCreate(uart_task, "UART Task", 4095, NULL, 1, NULL);
     
     vTaskStartScheduler();
     
