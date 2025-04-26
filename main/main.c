@@ -6,7 +6,6 @@
 #include <task.h>
 #include <semphr.h>
 #include <queue.h>
-
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include "hardware/uart.h"
@@ -14,8 +13,8 @@
 #include <stdlib.h>
 #include "hardware/i2c.h"
 #include "mpu6050.h"
-
 #include "Fusion.h"
+#include "hc06.h"
 
 #define SAMPLE_PERIOD (0.01f)
 // UART configuration
@@ -26,8 +25,9 @@
 const int BTN_LARANJA = 22;
 const int BTN_AZUL = 21;
 const int BTN_AMARELO = 20;
-const int BTN_VERMELHO = 18;
-const int BTN_VERDE = 19;
+const int BTN_VERMELHO = 19;
+const int BTN_VERDE = 18;
+const int BTN_JOYSTICK = 16; // Joystick button
 
 // Pins for joystick X and Y axes
 const int X_AXIS_PIN = 26;       
@@ -39,11 +39,12 @@ volatile bool btn_azul_flag = false;
 volatile bool btn_amarelo_flag = false;
 volatile bool btn_vermelho_flag = false;
 volatile bool btn_verde_flag = false;
+volatile bool btn_joystick_flag = false;
 
 // MPU6050 I2C address
 const int MPU_ADDRESS = 0x68;
-const int I2C_SDA_GPIO = 4;
-const int I2C_SCL_GPIO = 5;
+const int I2C_SDA_GPIO = 8;
+const int I2C_SCL_GPIO = 9;
 
 // ADC data structure
 typedef struct adc {
@@ -69,6 +70,8 @@ void btn_note_callback(uint gpio, uint32_t events)
             btn_vermelho_flag = true;
         else if (gpio == BTN_VERDE)
             btn_verde_flag = true;
+        else if (gpio == BTN_JOYSTICK)
+            btn_joystick_flag = true;
     }
     else if (events & GPIO_IRQ_EDGE_RISE)
     {
@@ -82,6 +85,8 @@ void btn_note_callback(uint gpio, uint32_t events)
             btn_vermelho_flag = false;
         else if (gpio == BTN_VERDE)
             btn_verde_flag = false;
+        else if (gpio == BTN_JOYSTICK)
+            btn_joystick_flag = false;
     }
 }
 
@@ -107,6 +112,10 @@ void init_buttons()
     gpio_init(BTN_VERDE);
     gpio_set_dir(BTN_VERDE, GPIO_IN);
     gpio_pull_up(BTN_VERDE);
+
+    gpio_init(BTN_JOYSTICK);
+    gpio_set_dir(BTN_JOYSTICK, GPIO_IN);
+    gpio_pull_up(BTN_JOYSTICK);
 }
 
 // Setup button interrupts
@@ -117,6 +126,7 @@ void init_callbacks()
     gpio_set_irq_enabled_with_callback(BTN_AMARELO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
     gpio_set_irq_enabled_with_callback(BTN_VERMELHO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
     gpio_set_irq_enabled_with_callback(BTN_VERDE, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+    gpio_set_irq_enabled_with_callback(BTN_JOYSTICK, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
 }
 
 // Convert ADC value from 0-4095 to useful range
@@ -302,12 +312,12 @@ void mpu6050_task(void *p) {
         acel.axis = 2;
         acel.val = accelerometer.axis.y*100;
         static int contador_zeros = 0;
-        printf("Acel: %d\n", acel.val);
+        //printf("Acel: %d\n", acel.val);
 
         if (acel.val == 0) {
             contador_zeros++;
             if (contador_zeros > 50) { 
-                printf("Sensor travado! Resetando MPU6050...\n");
+                //printf("Sensor travado! Resetando MPU6050...\n");
                 mpu6050_reset(); 
                 contador_zeros = 0;
             }
@@ -325,9 +335,20 @@ void mpu6050_task(void *p) {
     }
 }
 
+void hc06_task(void *p) {
+    uart_init(HC06_UART_ID, HC06_BAUD_RATE);
+    gpio_set_function(HC06_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(HC06_RX_PIN, GPIO_FUNC_UART);
+    hc06_init("gabi", "1234");
+
+    while (true) {
+        uart_puts(HC06_UART_ID, "briba ");
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 void uart_task(void *p) {
     adc_t adc_data;
-
     while (1) {
         if (xQueueReceive(xQueueADC, &adc_data, portMAX_DELAY))
         {
@@ -340,7 +361,6 @@ void uart_task(void *p) {
         }
     }
 }
-
 
 int main()
 {
@@ -368,14 +388,15 @@ int main()
         //printf("Erro ao criar a fila ADC!\n");
         while(1); 
     }
-    
     // Create tasks
     xTaskCreate(task_button_serial, "Button Serial", 512, NULL, 1, NULL);
     xTaskCreate(x_task, "X Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(y_task, "Y Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(mpu6050_task, "mpu6050_Task 1", 8192, NULL, 1, NULL);
     xTaskCreate(uart_task, "UART Task", 4095, NULL, 1, NULL);
-    
+    printf("Start bluetooth task\n");
+    xTaskCreate(hc06_task, "UART_Task 1", 4096, NULL, 1, NULL);
+
     vTaskStartScheduler();
     
     while (true) {
