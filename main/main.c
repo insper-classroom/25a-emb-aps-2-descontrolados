@@ -18,7 +18,7 @@
 
 #define SAMPLE_PERIOD (0.01f)
 // UART configuration
-#define UART_ID uart0
+#define UART_ID HC06_UART_ID
 #define BAUD_RATE 115200
 
 // Button definitions
@@ -341,13 +341,6 @@ void hc06_task(void *p) {
     gpio_set_function(HC06_RX_PIN, GPIO_FUNC_UART);
     hc06_init("gabi", "1234");
 
-    while (true) {
-        uart_puts(HC06_UART_ID, "briba ");
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-void uart_task(void *p) {
     adc_t adc_data;
     while (1) {
         if (xQueueReceive(xQueueADC, &adc_data, portMAX_DELAY))
@@ -357,10 +350,11 @@ void uart_task(void *p) {
             vec[1] = (uint8_t)adc_data.axis;
             vec[2] = (uint8_t)(adc_data.val & 0xFF);
             vec[3] = (uint8_t)((adc_data.val >> 8) & 0xFF);
-            uart_write_blocking(uart0, vec, 4); 
+            uart_write_blocking(HC06_UART_ID, vec, 4); 
         }
     }
 }
+
 
 int main()
 {
@@ -376,11 +370,6 @@ int main()
     init_buttons();
     init_callbacks();
     
-    // Initialize UART for joystick data
-    uart_init(UART_ID, BAUD_RATE);
-    gpio_set_function(0, GPIO_FUNC_UART);
-    gpio_set_function(1, GPIO_FUNC_UART);
-    
     // Create queue for ADC values
     xQueueADC = xQueueCreate(64, sizeof(adc_t));
     
@@ -393,7 +382,6 @@ int main()
     xTaskCreate(x_task, "X Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(y_task, "Y Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(mpu6050_task, "mpu6050_Task 1", 8192, NULL, 1, NULL);
-    xTaskCreate(uart_task, "UART Task", 4095, NULL, 1, NULL);
     printf("Start bluetooth task\n");
     xTaskCreate(hc06_task, "UART_Task 1", 4096, NULL, 1, NULL);
 
