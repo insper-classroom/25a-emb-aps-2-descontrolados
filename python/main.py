@@ -13,7 +13,7 @@ pyautogui.FAILSAFE = False
 
 # Parâmetros de joystick
 alpha = 0.2       # suavização exponencial (0.1 - 0.3)
-sensitivity = 0.1 # sensibilidade (0.0 - 1.0; <1 reduz movimento)
+sensitivity = 0.05 # sensibilidade (0.0 - 1.0; <1 reduz movimento)
 smoothed = {0: 0.0, 1: 0.0}
 keys_pressed = set()
 
@@ -87,7 +87,7 @@ def controle(ser):
             lines = txt_buf.split('\n')
             for line in lines[:-1]:
                 # ignora simples 'q','w','a','s','d'
-                if line in ('q','w','a','s','d'):
+                if line in ('q','w','a','s','d', "CLICK", "click"):
                     continue
                 # só processa linhas que contenham pelo menos um ':'
                 if ':' in line:
@@ -97,7 +97,9 @@ def controle(ser):
                         continue
                     key, action = parts
                     key = key.lower()
-
+                    
+                    if key == "click":
+                        pyautogui.click()
                     if action == 'DOWN' and key not in keys_pressed:
                         pyautogui.keyDown(key)
                         keys_pressed.add(key)

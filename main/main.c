@@ -201,20 +201,21 @@ void hc06_send_text(const char* text) {
 
 // Task to monitor button status and send via serial printf
 void task_button_serial(void *p) {
-    bool last_state[5] = {0};
-    const char* letras[5] = {"A", "S", "J", "K", "L"};
+    bool last_state[6] = {0};
+    const char* letras[6] = {"A", "S", "J", "K", "L", "CLICK"};
 
     while (true) {
         if (xSemaphoreTake(xSemaphoreEvent, portMAX_DELAY)){
-            bool current_state[5] = {
+            bool current_state[6] = {
                 btn_verde_flag,
                 btn_vermelho_flag,
                 btn_amarelo_flag,
                 btn_azul_flag,
-                btn_laranja_flag
+                btn_laranja_flag, 
+                btn_joystick_flag
             };
 
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < 6; i++) {
                 if (current_state[i] != last_state[i]) {
                     char buffer[16];
                     snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
@@ -223,7 +224,7 @@ void task_button_serial(void *p) {
                 }
             }
         }
-        // vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -326,7 +327,7 @@ void mpu6050_task(void *p) {
   
         adc_t acel;
         acel.axis = 2;
-        acel.val = accelerometer.axis.y*100;
+        acel.val = accelerometer.axis.x*100;
         static int contador_zeros = 0;
         //printf("Acel: %d\n", acel.val);
 
@@ -342,13 +343,13 @@ void mpu6050_task(void *p) {
         }
 
         
-        if (abs(acel.val) > 100) {
+        if (abs(acel.val) > 60) {
             printf("SPACE\n");
             xQueueSend(xQueueADC, &acel, 0);
             xSemaphoreGive(xSemaphoreEvent); 
         }
         
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
