@@ -34,17 +34,19 @@ const int X_AXIS_PIN = 26;
 const int Y_AXIS_PIN = 27;
 
 // Button flags
-volatile bool btn_laranja_flag = false;
-volatile bool btn_azul_flag = false;
-volatile bool btn_amarelo_flag = false;
-volatile bool btn_vermelho_flag = false;
-volatile bool btn_verde_flag = false;
-volatile bool btn_joystick_flag = false;
+// volatile bool btn_laranja_flag = false;
+// volatile bool btn_azul_flag = false;
+// volatile bool btn_amarelo_flag = false;
+// volatile bool btn_vermelho_flag = false;
+// volatile bool btn_verde_flag = false;
+// volatile bool btn_joystick_flag = false;
 
 // MPU6050 I2C address
 const int MPU_ADDRESS = 0x68;
 const int I2C_SDA_GPIO = 8;
 const int I2C_SCL_GPIO = 9;
+
+//const int STATE = 4;
 
 // ADC data structure
 typedef struct adc {
@@ -52,44 +54,58 @@ typedef struct adc {
     int val;                
 } adc_t;
 
+typedef struct {
+    uint gpio_pin;
+    bool pressed;
+} button_event_t;
+
 // Queue for ADC values
 QueueHandle_t xQueueADC;
+QueueHandle_t xQueueButtonEvents;
 SemaphoreHandle_t xSemaphoreEvent;
 
 // Button interrupt callback
 void btn_note_callback(uint gpio, uint32_t events)
 {
-    if (events & GPIO_IRQ_EDGE_FALL)
-    {
-        if (gpio == BTN_LARANJA)
-            btn_laranja_flag = true;
-        else if (gpio == BTN_AZUL)
-            btn_azul_flag = true;
-        else if (gpio == BTN_AMARELO)
-            btn_amarelo_flag = true;
-        else if (gpio == BTN_VERMELHO)
-            btn_vermelho_flag = true;
-        else if (gpio == BTN_VERDE)
-            btn_verde_flag = true;
-        else if (gpio == BTN_JOYSTICK)
-            btn_joystick_flag = true;
-    }
-    else if (events & GPIO_IRQ_EDGE_RISE)
-    {
-        if (gpio == BTN_LARANJA)
-            btn_laranja_flag = false;
-        else if (gpio == BTN_AZUL)
-            btn_azul_flag = false;
-        else if (gpio == BTN_AMARELO)
-            btn_amarelo_flag = false;
-        else if (gpio == BTN_VERMELHO)
-            btn_vermelho_flag = false;
-        else if (gpio == BTN_VERDE)
-            btn_verde_flag = false;
-        else if (gpio == BTN_JOYSTICK)
-            btn_joystick_flag = false;
-    }
-    xSemaphoreGiveFromISR(xSemaphoreEvent, 0);
+    button_event_t event;
+
+    event.gpio_pin = gpio;
+    event.pressed = (events & GPIO_IRQ_EDGE_FALL) != 0;
+
+    xQueueSendFromISR(xQueueButtonEvents, &event, 0);
+
+    // if (events & GPIO_IRQ_EDGE_FALL)
+    // {
+    //     if (gpio == BTN_LARANJA)
+    //         btn_laranja_flag = true;
+    //     else if (gpio == BTN_AZUL)
+    //         btn_azul_flag = true;
+    //     else if (gpio == BTN_AMARELO)
+    //         btn_amarelo_flag = true;
+    //     else if (gpio == BTN_VERMELHO)
+    //         btn_vermelho_flag = true;
+    //     else if (gpio == BTN_VERDE)
+    //         btn_verde_flag = true;
+    //     else if (gpio == BTN_JOYSTICK)
+    //         btn_joystick_flag = true;
+    // }
+    // else if (events & GPIO_IRQ_EDGE_RISE)
+    // {
+    //     if (gpio == BTN_LARANJA)
+    //         btn_laranja_flag = false;
+    //     else if (gpio == BTN_AZUL)
+    //         btn_azul_flag = false;
+    //     else if (gpio == BTN_AMARELO)
+    //         btn_amarelo_flag = false;
+    //     else if (gpio == BTN_VERMELHO)
+    //         btn_vermelho_flag = false;
+    //     else if (gpio == BTN_VERDE)
+    //         btn_verde_flag = false;
+    //     else if (gpio == BTN_JOYSTICK)
+    //         btn_joystick_flag = false;
+    // }
+    // xSemaphoreGiveFromISR(xSemaphoreEvent, 0);
+
 }
 
 // Initialize all buttons
@@ -203,29 +219,45 @@ void hc06_send_text(const char* text) {
 void task_button_serial(void *p) {
     bool last_state[6] = {0};
     const char* letras[6] = {"A", "S", "J", "K", "L", "CLICK"};
+    const uint gpios[6] = {BTN_VERDE, BTN_VERMELHO, BTN_AMARELO, BTN_AZUL, BTN_LARANJA, BTN_JOYSTICK};
+
+    button_event_t event;
 
     while (true) {
-        if (xSemaphoreTake(xSemaphoreEvent, portMAX_DELAY)){
-            bool current_state[6] = {
-                btn_verde_flag,
-                btn_vermelho_flag,
-                btn_amarelo_flag,
-                btn_azul_flag,
-                btn_laranja_flag, 
-                btn_joystick_flag
-            };
-
+        if (xQueueReceive(xQueueButtonEvents, &event, portMAX_DELAY)) {
             for (int i = 0; i < 6; i++) {
-                if (current_state[i] != last_state[i]) {
+                if (event.gpio_pin == gpios[i]) {
                     char buffer[16];
-                    snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
-                    hc06_send_text(buffer); // ENVIA PELO BLUETOOTH
-                    last_state[i] = current_state[i];
+                    snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], event.pressed ? "DOWN" : "UP");
+                    hc06_send_text(buffer);
+                    break;
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
+
+    // while (true) {
+    //     if (xSemaphoreTake(xSemaphoreEvent, portMAX_DELAY)){
+    //         bool current_state[6] = {
+    //             btn_verde_flag,
+    //             btn_vermelho_flag,
+    //             btn_amarelo_flag,
+    //             btn_azul_flag,
+    //             btn_laranja_flag, 
+    //             btn_joystick_flag
+    //         };
+
+    //         for (int i = 0; i < 6; i++) {
+    //             if (current_state[i] != last_state[i]) {
+    //                 char buffer[16];
+    //                 snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
+    //                 hc06_send_text(buffer); // ENVIA PELO BLUETOOTH
+    //                 last_state[i] = current_state[i];
+    //             }
+    //         }
+    //     }
+    //     vTaskDelay(pdMS_TO_TICKS(10));
+    // }
 }
 
 // Task to read X axis and send to queue
@@ -320,7 +352,7 @@ void mpu6050_task(void *p) {
         };      
   
         FusionAhrsUpdateNoMagnetometer(&ahrs, gyroscope, accelerometer, SAMPLE_PERIOD);
-        const FusionEuler euler = FusionQuaternionToEuler(FusionAhrsGetQuaternion(&ahrs));
+        // const FusionEuler euler = FusionQuaternionToEuler(FusionAhrsGetQuaternion(&ahrs));
         // printf("Roll %0.1f, Pitch %0.1f, Yaw %0.1f\n", euler.angle.roll, euler.angle.pitch, euler.angle.yaw); 
         
         // criar os structs pra enviar pra fila
@@ -343,7 +375,7 @@ void mpu6050_task(void *p) {
         }
 
         
-        if (abs(acel.val) > 60) {
+        if (abs(acel.val) > 150) {
             printf("SPACE\n");
             xQueueSend(xQueueADC, &acel, 0);
             xSemaphoreGive(xSemaphoreEvent); 
@@ -373,6 +405,26 @@ void hc06_task(void *p) {
     }
 }
 
+// void monitor_bluetooth_task(void *p) {
+//     gpio_init(STATE);
+//     gpio_set_dir(STATE, GPIO_IN);
+//     gpio_pull_down(STATE); 
+
+//     gpio_init(LED_PIN);
+//     gpio_set_dir(LED_PIN, GPIO_OUT);
+
+//     while (true) {
+//         bool conectado = gpio_get(STATE); // Lê o pino do Bluetooth
+        
+//         if (conectado) {
+//             gpio_put(LED_PIN, 1); // Acende o LED
+//         } else {
+//             gpio_put(LED_PIN, 0); // Apaga o LED
+//         }
+        
+//         vTaskDelay(pdMS_TO_TICKS(200)); // Atualiza a cada 200ms
+//     }
+// }
 
 int main()
 {
@@ -392,12 +444,15 @@ int main()
     xSemaphoreEvent = xSemaphoreCreateBinary();
     // Create queue for ADC values
     xQueueADC = xQueueCreate(64, sizeof(adc_t));
+    xQueueButtonEvents = xQueueCreate(64, sizeof(button_event_t));
     
     if (xQueueADC == NULL) {
         //printf("Erro ao criar a fila ADC!\n");
         while(1); 
     }
     // Create tasks
+    //xTaskCreate(monitor_bluetooth_task, "Monitor Bluetooth", 256, NULL, 1, NULL);
+
     xTaskCreate(task_button_serial, "Button Serial", 512, NULL, 1, NULL);
     xTaskCreate(x_task, "X Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(y_task, "Y Axis Task", 256, NULL, 1, NULL);
