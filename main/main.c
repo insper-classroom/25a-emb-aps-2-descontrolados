@@ -217,7 +217,7 @@ void hc06_send_text(const char* text) {
 
 // Task to monitor button status and send via serial printf
 void task_button_serial(void *p) {
-    bool last_state[6] = {0};
+    // bool last_state[6] = {0};
     const char* letras[6] = {"A", "S", "J", "K", "L", "CLICK"};
     const uint gpios[6] = {BTN_VERDE, BTN_VERMELHO, BTN_AMARELO, BTN_AZUL, BTN_LARANJA, BTN_JOYSTICK};
 
