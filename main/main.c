@@ -187,6 +187,16 @@ static void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3], int16_t *temp) {
     *temp = buffer[0] << 8 | buffer[1];
 }
 
+void hc06_send_text(const char* text) {
+    size_t len = strlen(text);
+    for (size_t i = 0; i < len; i++) {
+        while (!uart_is_writable(HC06_UART_ID)) {
+            taskYIELD(); // Deixa o FreeRTOS trocar de task enquanto espera
+        }
+        uart_putc_raw(HC06_UART_ID, text[i]);
+    }
+}
+
 // Task to monitor button status and send via serial printf
 void task_button_serial(void *p) {
     bool last_state[5] = {0};
@@ -204,7 +214,11 @@ void task_button_serial(void *p) {
 
         for (int i = 0; i < 5; i++) {
             if (current_state[i] != last_state[i]) {
-                printf("%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
+                // printf("%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
+                // last_state[i] = current_state[i];
+                char buffer[16];
+                snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
+                hc06_send_text(buffer); // ENVIA PELO BLUETOOTH
                 last_state[i] = current_state[i];
             }
         }
@@ -381,9 +395,9 @@ int main()
     xTaskCreate(task_button_serial, "Button Serial", 512, NULL, 1, NULL);
     xTaskCreate(x_task, "X Axis Task", 256, NULL, 1, NULL);
     xTaskCreate(y_task, "Y Axis Task", 256, NULL, 1, NULL);
-    xTaskCreate(mpu6050_task, "mpu6050_Task 1", 8192, NULL, 1, NULL);
-    printf("Start bluetooth task\n");
-    xTaskCreate(hc06_task, "UART_Task 1", 4096, NULL, 1, NULL);
+    xTaskCreate(mpu6050_task, "mpu6050_Task", 8192, NULL, 1, NULL);
+    // printf("Start bluetooth task\n");
+    xTaskCreate(hc06_task, "UART_Task", 4096, NULL, 1, NULL);
 
     vTaskStartScheduler();
     
