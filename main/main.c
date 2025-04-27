@@ -54,6 +54,7 @@ typedef struct adc {
 
 // Queue for ADC values
 QueueHandle_t xQueueADC;
+SemaphoreHandle_t xSemaphoreEvent;
 
 // Button interrupt callback
 void btn_note_callback(uint gpio, uint32_t events)
@@ -88,6 +89,7 @@ void btn_note_callback(uint gpio, uint32_t events)
         else if (gpio == BTN_JOYSTICK)
             btn_joystick_flag = false;
     }
+    xSemaphoreGiveFromISR(xSemaphoreEvent, 0);
 }
 
 // Initialize all buttons
@@ -122,11 +124,11 @@ void init_buttons()
 void init_callbacks()
 {
     gpio_set_irq_enabled_with_callback(BTN_LARANJA, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
-    gpio_set_irq_enabled_with_callback(BTN_AZUL, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
-    gpio_set_irq_enabled_with_callback(BTN_AMARELO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
-    gpio_set_irq_enabled_with_callback(BTN_VERMELHO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
-    gpio_set_irq_enabled_with_callback(BTN_VERDE, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
-    gpio_set_irq_enabled_with_callback(BTN_JOYSTICK, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &btn_note_callback);
+    gpio_set_irq_enabled(BTN_AZUL, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+    gpio_set_irq_enabled(BTN_AMARELO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+    gpio_set_irq_enabled(BTN_VERMELHO, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+    gpio_set_irq_enabled(BTN_VERDE, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+    gpio_set_irq_enabled(BTN_JOYSTICK, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
 }
 
 // Convert ADC value from 0-4095 to useful range
@@ -200,30 +202,28 @@ void hc06_send_text(const char* text) {
 // Task to monitor button status and send via serial printf
 void task_button_serial(void *p) {
     bool last_state[5] = {0};
+    const char* letras[5] = {"A", "S", "J", "K", "L"};
 
     while (true) {
-        bool current_state[5] = {
-            btn_verde_flag,
-            btn_vermelho_flag,
-            btn_amarelo_flag,
-            btn_azul_flag,
-            btn_laranja_flag
-        };
+        if (xSemaphoreTake(xSemaphoreEvent, portMAX_DELAY)){
+            bool current_state[5] = {
+                btn_verde_flag,
+                btn_vermelho_flag,
+                btn_amarelo_flag,
+                btn_azul_flag,
+                btn_laranja_flag
+            };
 
-        const char* letras[5] = {"A", "S", "J", "K", "L"};
-
-        for (int i = 0; i < 5; i++) {
-            if (current_state[i] != last_state[i]) {
-                // printf("%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
-                // last_state[i] = current_state[i];
-                char buffer[16];
-                snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
-                hc06_send_text(buffer); // ENVIA PELO BLUETOOTH
-                last_state[i] = current_state[i];
+            for (int i = 0; i < 5; i++) {
+                if (current_state[i] != last_state[i]) {
+                    char buffer[16];
+                    snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
+                    hc06_send_text(buffer); // ENVIA PELO BLUETOOTH
+                    last_state[i] = current_state[i];
+                }
             }
         }
-
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -251,6 +251,7 @@ void x_task(void *p) {
         
         if (adc_data.val != 0) {
             xQueueSend(xQueueADC, &adc_data, 0);
+            xSemaphoreGive(xSemaphoreEvent); 
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -281,6 +282,7 @@ void y_task(void *p) {
         
         if (adc_data.val != 0) {
             xQueueSend(xQueueADC, &adc_data, 0);
+            xSemaphoreGive(xSemaphoreEvent); 
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -343,6 +345,7 @@ void mpu6050_task(void *p) {
         if (abs(acel.val) > 100) {
             printf("SPACE\n");
             xQueueSend(xQueueADC, &acel, 0);
+            xSemaphoreGive(xSemaphoreEvent); 
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -383,7 +386,9 @@ int main()
     // Initialize buttons and their interrupts
     init_buttons();
     init_callbacks();
-    
+
+    //cria semaforo
+    xSemaphoreEvent = xSemaphoreCreateBinary();
     // Create queue for ADC values
     xQueueADC = xQueueCreate(64, sizeof(adc_t));
     
