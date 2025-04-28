@@ -40,7 +40,8 @@ const int I2C_SCL_GPIO = 9;
 
 #define LED_RED_PIN 28      // GPIO para o LED vermelho
 #define LED_GREEN_PIN 17    // GPIO para o LED verde
-volatile bool conectado = false;
+
+
 
 
 // ADC data structure
@@ -58,6 +59,7 @@ typedef struct {
 QueueHandle_t xQueueADC;
 QueueHandle_t xQueueButtonEvents;
 SemaphoreHandle_t xSemaphoreEvent;
+SemaphoreHandle_t conexao_semaphore;
 volatile uint32_t last_bluetooth_message_time = 0;
 
 void init_leds() {
@@ -366,11 +368,12 @@ void hc06_task(void *p) {
             uart_read_blocking(HC06_UART_ID, &lixo, 1);
 
             // Ao receber qualquer dado, marcamos como conectado
-            if (!conectado) {
-                conectado = true;
+            if (uxSemaphoreGetCount(conexao_semaphore) == 0) {
+                xSemaphoreGive(conexao_semaphore);
                 gpio_put(LED_RED_PIN, 0);
                 gpio_put(LED_GREEN_PIN, 1);
             }
+            
         }         
     }
 }
@@ -395,6 +398,8 @@ int main()
 
     //cria semaforo
     xSemaphoreEvent = xSemaphoreCreateBinary();
+    conexao_semaphore = xSemaphoreCreateBinary();
+
     // Create queue for ADC values
     xQueueADC = xQueueCreate(64, sizeof(adc_t));
     xQueueButtonEvents = xQueueCreate(64, sizeof(button_event_t));
