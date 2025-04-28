@@ -33,20 +33,15 @@ const int BTN_JOYSTICK = 16; // Joystick button
 const int X_AXIS_PIN = 26;       
 const int Y_AXIS_PIN = 27;
 
-// Button flags
-// volatile bool btn_laranja_flag = false;
-// volatile bool btn_azul_flag = false;
-// volatile bool btn_amarelo_flag = false;
-// volatile bool btn_vermelho_flag = false;
-// volatile bool btn_verde_flag = false;
-// volatile bool btn_joystick_flag = false;
-
 // MPU6050 I2C address
 const int MPU_ADDRESS = 0x68;
 const int I2C_SDA_GPIO = 8;
 const int I2C_SCL_GPIO = 9;
 
-//const int STATE = 4;
+#define LED_RED_PIN 28      // GPIO para o LED vermelho
+#define LED_GREEN_PIN 17    // GPIO para o LED verde
+volatile bool conectado = false;
+
 
 // ADC data structure
 typedef struct adc {
@@ -63,6 +58,20 @@ typedef struct {
 QueueHandle_t xQueueADC;
 QueueHandle_t xQueueButtonEvents;
 SemaphoreHandle_t xSemaphoreEvent;
+volatile uint32_t last_bluetooth_message_time = 0;
+
+void init_leds() {
+    gpio_init(LED_RED_PIN);
+    gpio_set_dir(LED_RED_PIN, GPIO_OUT);
+
+    gpio_init(LED_GREEN_PIN);
+    gpio_set_dir(LED_GREEN_PIN, GPIO_OUT);
+
+    gpio_init(HC06_STATE_PIN);
+    gpio_set_dir(HC06_STATE_PIN, GPIO_IN);
+    gpio_pull_down(HC06_STATE_PIN); // Garante leitura correta
+}
+
 
 // Button interrupt callback
 void btn_note_callback(uint gpio, uint32_t events)
@@ -73,38 +82,6 @@ void btn_note_callback(uint gpio, uint32_t events)
     event.pressed = (events & GPIO_IRQ_EDGE_FALL) != 0;
 
     xQueueSendFromISR(xQueueButtonEvents, &event, 0);
-
-    // if (events & GPIO_IRQ_EDGE_FALL)
-    // {
-    //     if (gpio == BTN_LARANJA)
-    //         btn_laranja_flag = true;
-    //     else if (gpio == BTN_AZUL)
-    //         btn_azul_flag = true;
-    //     else if (gpio == BTN_AMARELO)
-    //         btn_amarelo_flag = true;
-    //     else if (gpio == BTN_VERMELHO)
-    //         btn_vermelho_flag = true;
-    //     else if (gpio == BTN_VERDE)
-    //         btn_verde_flag = true;
-    //     else if (gpio == BTN_JOYSTICK)
-    //         btn_joystick_flag = true;
-    // }
-    // else if (events & GPIO_IRQ_EDGE_RISE)
-    // {
-    //     if (gpio == BTN_LARANJA)
-    //         btn_laranja_flag = false;
-    //     else if (gpio == BTN_AZUL)
-    //         btn_azul_flag = false;
-    //     else if (gpio == BTN_AMARELO)
-    //         btn_amarelo_flag = false;
-    //     else if (gpio == BTN_VERMELHO)
-    //         btn_vermelho_flag = false;
-    //     else if (gpio == BTN_VERDE)
-    //         btn_verde_flag = false;
-    //     else if (gpio == BTN_JOYSTICK)
-    //         btn_joystick_flag = false;
-    // }
-    // xSemaphoreGiveFromISR(xSemaphoreEvent, 0);
 
 }
 
@@ -235,29 +212,6 @@ void task_button_serial(void *p) {
             }
         }
     }
-
-    // while (true) {
-    //     if (xSemaphoreTake(xSemaphoreEvent, portMAX_DELAY)){
-    //         bool current_state[6] = {
-    //             btn_verde_flag,
-    //             btn_vermelho_flag,
-    //             btn_amarelo_flag,
-    //             btn_azul_flag,
-    //             btn_laranja_flag, 
-    //             btn_joystick_flag
-    //         };
-
-    //         for (int i = 0; i < 6; i++) {
-    //             if (current_state[i] != last_state[i]) {
-    //                 char buffer[16];
-    //                 snprintf(buffer, sizeof(buffer), "%s:%s\n", letras[i], current_state[i] ? "DOWN" : "UP");
-    //                 hc06_send_text(buffer); // ENVIA PELO BLUETOOTH
-    //                 last_state[i] = current_state[i];
-    //             }
-    //         }
-    //     }
-    //     vTaskDelay(pdMS_TO_TICKS(10));
-    // }
 }
 
 // Task to read X axis and send to queue
@@ -391,6 +345,10 @@ void hc06_task(void *p) {
     gpio_set_function(HC06_RX_PIN, GPIO_FUNC_UART);
     hc06_init("gabi", "1234");
 
+    // Deixa o LED vermelho aceso inicialmente
+    gpio_put(LED_RED_PIN, 1);
+    gpio_put(LED_GREEN_PIN, 0);
+
     adc_t adc_data;
     while (1) {
         if (xQueueReceive(xQueueADC, &adc_data, portMAX_DELAY))
@@ -402,29 +360,23 @@ void hc06_task(void *p) {
             vec[3] = (uint8_t)((adc_data.val >> 8) & 0xFF);
             uart_write_blocking(HC06_UART_ID, vec, 4); 
         }
+
+        if (uart_is_readable(HC06_UART_ID)) {
+            uint8_t lixo;
+            uart_read_blocking(HC06_UART_ID, &lixo, 1);
+
+            // Ao receber qualquer dado, marcamos como conectado
+            if (!conectado) {
+                conectado = true;
+                gpio_put(LED_RED_PIN, 0);
+                gpio_put(LED_GREEN_PIN, 1);
+            }
+        }         
     }
 }
 
-// void monitor_bluetooth_task(void *p) {
-//     gpio_init(STATE);
-//     gpio_set_dir(STATE, GPIO_IN);
-//     gpio_pull_down(STATE); 
 
-//     gpio_init(LED_PIN);
-//     gpio_set_dir(LED_PIN, GPIO_OUT);
 
-//     while (true) {
-//         bool conectado = gpio_get(STATE); // Lê o pino do Bluetooth
-        
-//         if (conectado) {
-//             gpio_put(LED_PIN, 1); // Acende o LED
-//         } else {
-//             gpio_put(LED_PIN, 0); // Apaga o LED
-//         }
-        
-//         vTaskDelay(pdMS_TO_TICKS(200)); // Atualiza a cada 200ms
-//     }
-// }
 
 int main()
 {
@@ -439,6 +391,7 @@ int main()
     // Initialize buttons and their interrupts
     init_buttons();
     init_callbacks();
+    init_leds();
 
     //cria semaforo
     xSemaphoreEvent = xSemaphoreCreateBinary();
@@ -459,6 +412,7 @@ int main()
     xTaskCreate(mpu6050_task, "mpu6050_Task", 8192, NULL, 1, NULL);
     // printf("Start bluetooth task\n");
     xTaskCreate(hc06_task, "UART_Task", 4096, NULL, 1, NULL);
+
 
     vTaskStartScheduler();
     

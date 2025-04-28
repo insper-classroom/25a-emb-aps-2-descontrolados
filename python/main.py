@@ -139,6 +139,7 @@ def conectar_porta(port_name, root, botao_conectar, status_label, mudar_cor_circ
         return
     try:
         ser = serial.Serial(port_name, 115200, timeout=0)
+        ser.write(b'C')  # Envia um byte para sinalizar conexão
         status_label.config(text=f"Conectado em {port_name}", foreground="green")
         mudar_cor_circulo("green")
         botao_conectar.config(text="Conectado")
